@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Discogs Collection</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container { max-width: 1400px; margin: 0 auto; }
+    h1 { margin-bottom: 30px; font-size: 2.5rem; }
+    .controls {
+      margin-bottom: 30px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    button {
+      background: #3b82f6;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 1rem;
+      transition: background 0.2s;
+    }
+    button:hover { background: #2563eb; }
+    button:disabled { background: #64748b; cursor: not-allowed; }
+    input {
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid #475569;
+      background: #1e293b;
+      color: #e2e8f0;
+      font-size: 1rem;
+      flex: 1;
+      min-width: 200px;
+    }
+    .status {
+      background: #334155;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 10px;
+    }
+    .album {
+      background: #1e293b;
+      border-radius: 6px;
+      overflow: hidden;
+      transition: transform 0.2s;
+      cursor: pointer;
+      border: 1px solid #334155;
+    }
+    .album:hover { transform: translateY(-2px); }
+    .album img {
+      width: 100%;
+      height: 120px;
+      object-fit: cover;
+      background: #334155;
+    }
+    .album-info {
+      padding: 8px;
+    }
+    .album-title {
+      font-weight: bold;
+      margin-bottom: 2px;
+      font-size: 0.75rem;
+      line-height: 1.2;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .album-artist {
+      color: #94a3b8;
+      font-size: 0.7rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .loading { text-align: center; padding: 40px; font-size: 1.2rem; }
+    
+    /* Modal styles */
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.8);
+      z-index: 1000;
+      overflow-y: auto;
+    }
+    .modal.active { display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .modal-content {
+      background: #1e293b;
+      border-radius: 12px;
+      max-width: 800px;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+      border: 1px solid #334155;
+    }
+    .modal-header {
+      padding: 20px;
+      border-bottom: 1px solid #334155;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-close {
+      background: #475569;
+      border: none;
+      color: white;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 1.2rem;
+      line-height: 1;
+    }
+    .modal-close:hover { background: #64748b; }
+    .modal-body {
+      padding: 20px;
+    }
+    .album-detail {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      gap: 30px;
+    }
+    .album-cover-large {
+      width: 100%;
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    }
+    .album-info-detail h2 {
+      font-size: 1.8rem;
+      margin-bottom: 8px;
+    }
+    .album-info-detail .artist {
+      color: #94a3b8;
+      font-size: 1.2rem;
+      margin-bottom: 20px;
+    }
+    .album-meta {
+      display: grid;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .meta-item {
+      display: flex;
+      gap: 8px;
+    }
+    .meta-label {
+      color: #64748b;
+      font-weight: bold;
+      min-width: 80px;
+    }
+    .stars {
+      color: #fbbf24;
+      font-size: 1.4rem;
+      letter-spacing: 2px;
+    }
+    .rating-selector {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .rating-star {
+      font-size: 2rem;
+      cursor: pointer;
+      color: #475569;
+      transition: color 0.2s;
+      user-select: none;
+    }
+    .rating-star:hover,
+    .rating-star.active {
+      color: #fbbf24;
+    }
+    .rating-star.active {
+      text-shadow: 0 0 10px rgba(251, 191, 36, 0.5);
+    }
+    .tracklist {
+      margin-top: 30px;
+    }
+    .tracklist h3 {
+      margin-bottom: 15px;
+      color: #94a3b8;
+    }
+    .track {
+      padding: 8px 12px;
+      background: #0f172a;
+      border-radius: 6px;
+      margin-bottom: 6px;
+      display: flex;
+      gap: 12px;
+    }
+    .track-position {
+      color: #64748b;
+      min-width: 30px;
+    }
+    .scrobble-btn {
+      background: #d51007;
+      margin-top: 20px;
+      width: 100%;
+      padding: 14px;
+      font-size: 1rem;
+    }
+    .scrobble-btn:hover {
+      background: #ba0d06;
+    }
+    .scrobble-btn:disabled {
+      background: #64748b;
+    }
+    .ai-recommendation {
+      background: #0f172a;
+      border: 1px solid #475569;
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 15px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .ai-recommendation:hover {
+      border-color: #ec4899;
+      background: #1a2a3a;
+      transform: translateX(4px);
+    }
+    .ai-recommendation-header {
+      display: flex;
+      gap: 15px;
+      margin-bottom: 10px;
+    }
+    .ai-recommendation-cover {
+      width: 80px;
+      height: 80px;
+      border-radius: 6px;
+      flex-shrink: 0;
+      background: #334155;
+      overflow: hidden;
+    }
+    .ai-recommendation-cover img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .ai-recommendation-title {
+      flex: 1;
+    }
+    .ai-recommendation-title h3 {
+      margin-bottom: 4px;
+      font-size: 1.1rem;
+    }
+    .ai-recommendation-title .artist {
+      color: #94a3b8;
+      font-size: 0.9rem;
+      margin-bottom: 4px;
+    }
+    .ai-recommendation-title .meta {
+      font-size: 0.85rem;
+      color: #64748b;
+    }
+    .ai-recommendation-reason {
+      color: #cbd5e1;
+      font-style: italic;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid #334155;
+      font-size: 0.95rem;
+    }
+    @media (max-width: 768px) {
+      .album-detail {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎵 My Discogs Collection</h1>
+    
+    <div class="controls">
+      <button id="syncBtn">Sync Collection</button>
+      <button id="loadBtn">Load Collection</button>
+      <button id="lastfmBtn">Connect Last.fm</button>
+      <button id="randomBtn" style="background: #8b5cf6;">🎲 Random Unrated</button>
+      <button id="aiBtn" style="background: #ec4899;">🤖 AI Recommend</button>
+      <input type="text" id="searchInput" placeholder="Search by artist or title...">
+    </div>
+
+    <div class="status" id="status">
+      Ready. Click "Sync Collection" to fetch your Discogs collection.
+    </div>
+
+    <div class="grid" id="grid"></div>
+  </div>
+
+  <!-- Album Detail Modal -->
+  <div class="modal" id="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Album Details</h2>
+        <button class="modal-close" onclick="closeModal()">×</button>
+      </div>
+      <div class="modal-body" id="modalBody">
+        Loading...
+      </div>
+    </div>
+  </div>
+
+  <!-- AI Recommend Modal -->
+  <div class="modal" id="aiModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>🤖 AI Album Recommender</h2>
+        <button class="modal-close" onclick="closeAiModal()">×</button>
+      </div>
+      <div class="modal-body" id="aiModalBody">
+        <div id="aiInputSection">
+          <p style="margin-bottom: 15px; color: #94a3b8;">Tell the AI about your mood or what kind of music you want to listen to, and it will recommend albums from your collection.</p>
+          <textarea id="aiQuery" 
+                    placeholder="e.g., 'I'm feeling sad and want something melancholic', or 'I want upbeat music to dance to'" 
+                    style="width: 100%; height: 80px; padding: 12px; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: #e2e8f0; font-size: 1rem; font-family: inherit; resize: vertical;"></textarea>
+          <button id="getRecommendationBtn" 
+                  onclick="getAiRecommendations()" 
+                  style="margin-top: 15px; width: 100%; padding: 12px; background: #ec4899; font-size: 1rem;">
+            Get Recommendations
+          </button>
+        </div>
+        <div id="aiRecommendationsSection" style="display: none;"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let collection = [];
+    let lastfmConnected = false;
+
+    document.getElementById('syncBtn').addEventListener('click', syncCollection);
+    document.getElementById('loadBtn').addEventListener('click', loadCollection);
+    document.getElementById('searchInput').addEventListener('input', filterCollection);
+    document.getElementById('lastfmBtn').addEventListener('click', connectLastfm);
+    document.getElementById('randomBtn').addEventListener('click', showRandomUnrated);
+    document.getElementById('aiBtn').addEventListener('click', openAiModal);
+
+    // Check Last.fm connection status on load
+    checkLastfmStatus();
+    
+    // Check for Last.fm callback
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('lastfm') === 'connected') {
+      document.getElementById('status').textContent = '✅ Connected to Last.fm!';
+      checkLastfmStatus();
+      window.history.replaceState({}, '', '/');
+    }
+
+    async function checkLastfmStatus() {
+      try {
+        const response = await fetch('/api/lastfm/status');
+        const data = await response.json();
+        lastfmConnected = data.connected;
+        
+        const btn = document.getElementById('lastfmBtn');
+        if (lastfmConnected) {
+          btn.textContent = '✓ Last.fm Connected';
+          btn.style.background = '#10b981';
+        } else {
+          btn.textContent = 'Connect Last.fm';
+          btn.style.background = '#d51007';
+        }
+      } catch (error) {
+        console.error('Error checking Last.fm status:', error);
+      }
+    }
+
+    async function connectLastfm() {
+      try {
+        const response = await fetch('/api/lastfm/auth-url');
+        const data = await response.json();
+        window.location.href = data.url;
+      } catch (error) {
+        alert('Error connecting to Last.fm: ' + error.message);
+      }
+    }
+
+    function showRandomUnrated() {
+      if (collection.length === 0) {
+        alert('Please load your collection first!');
+        return;
+      }
+
+      const unrated = collection.filter(album => !album.rating || album.rating === 0);
+      
+      if (unrated.length === 0) {
+        alert('🎉 Amazing! You\'ve rated all your albums!');
+        return;
+      }
+
+      const randomAlbum = unrated[Math.floor(Math.random() * unrated.length)];
+      
+      document.getElementById('status').textContent = 
+        `🎲 Random pick: ${randomAlbum.artist} - ${randomAlbum.title} (${unrated.length} unrated albums remaining)`;
+      
+      // Open the album details
+      showDetails(randomAlbum.id);
+    }
+
+    async function syncCollection() {
+      const btn = document.getElementById('syncBtn');
+      const status = document.getElementById('status');
+      
+      btn.disabled = true;
+      status.textContent = 'Syncing with Discogs... this may take a moment.';
+      
+      try {
+        const response = await fetch('/api/sync', { method: 'POST' });
+        const data = await response.json();
+        
+        if (data.success) {
+          status.textContent = `✅ Synced ${data.synced} releases successfully!`;
+          loadCollection();
+        } else {
+          status.textContent = `❌ Error: ${data.error}`;
+        }
+      } catch (error) {
+        status.textContent = `❌ Error: ${error.message}`;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function loadCollection() {
+      const status = document.getElementById('status');
+      const grid = document.getElementById('grid');
+      
+      status.textContent = 'Loading collection...';
+      grid.innerHTML = '<div class="loading">Loading...</div>';
+      
+      try {
+        const response = await fetch('/api/collection');
+        const data = await response.json();
+        
+        collection = data.collection;
+        
+        if (collection.length === 0) {
+          status.textContent = data.message || 'No albums found.';
+          grid.innerHTML = '';
+        } else {
+          status.textContent = `📀 Showing ${collection.length} albums`;
+          renderCollection(collection);
+        }
+      } catch (error) {
+        status.textContent = `❌ Error loading: ${error.message}`;
+        grid.innerHTML = '';
+      }
+    }
+
+    function renderCollection(albums) {
+      const grid = document.getElementById('grid');
+      grid.innerHTML = albums.map(album => `
+        <div class="album" onclick="showDetails(${album.id})">
+          <img src="${album.thumb || album.cover_image}" 
+               alt="${album.title}"
+               onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22%3E%3Crect fill=%22%23334155%22 width=%22200%22 height=%22200%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 fill=%22%2394a3b8%22 text-anchor=%22middle%22 dy=%22.3em%22%3ENo Image%3C/text%3E%3C/svg%3E'">
+          <div class="album-info">
+            <div class="album-title">${album.title}</div>
+            <div class="album-artist">${album.artist}</div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function filterCollection(e) {
+      const search = e.target.value.toLowerCase();
+      const filtered = collection.filter(album => 
+        album.title.toLowerCase().includes(search) ||
+        album.artist.toLowerCase().includes(search)
+      );
+      
+      document.getElementById('status').textContent = 
+        `📀 Showing ${filtered.length} of ${collection.length} albums`;
+      renderCollection(filtered);
+    }
+
+    function showDetails(id) {
+      const modal = document.getElementById('modal');
+      const modalBody = document.getElementById('modalBody');
+      
+      modal.classList.add('active');
+      modalBody.innerHTML = '<div class="loading">Loading album details...</div>';
+      
+      fetch(`/api/release/${id}`)
+        .then(response => response.json())
+        .then(album => {
+          const stars = '★'.repeat(album.rating || 0) + '☆'.repeat(5 - (album.rating || 0));
+          const tracklist = album.tracklist || [];
+          
+          modalBody.innerHTML = `
+            <div class="album-detail">
+              <div>
+                <img class="album-cover-large" 
+                     src="${album.cover_image || album.thumb}" 
+                     alt="${album.title}"
+                     onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22300%22 height=%22300%22%3E%3Crect fill=%22%23334155%22 width=%22300%22 height=%22300%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 fill=%22%2394a3b8%22 text-anchor=%22middle%22 dy=%22.3em%22%3ENo Image%3C/text%3E%3C/svg%3E'">
+              </div>
+              <div class="album-info-detail">
+                <h2>${album.title}</h2>
+                <div class="artist">${album.artist}</div>
+                
+                <div class="album-meta">
+                  <div class="meta-item">
+                    <span class="meta-label">Year:</span>
+                    <span>${album.year || 'Unknown'}</span>
+                  </div>
+                  <div class="meta-item">
+                    <span class="meta-label">Format:</span>
+                    <span>${album.format || 'Unknown'}</span>
+                  </div>
+                  <div class="meta-item">
+                    <span class="meta-label">Label:</span>
+                    <span>${album.label || 'Unknown'}</span>
+                  </div>
+                  <div class="meta-item">
+                    <span class="meta-label">My Rating:</span>
+                    <div>
+                      <span class="stars">${stars}</span>
+                      <div class="rating-selector">
+                        ${[1, 2, 3, 4, 5].map(num => 
+                          `<span class="rating-star ${num <= (album.rating || 0) ? 'active' : ''}" 
+                                 onclick="rateAlbum(${album.id}, ${num})">★</span>`
+                        ).join('')}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                ${tracklist.length > 0 ? `
+                  <div class="tracklist">
+                    <h3>Tracklist</h3>
+                    ${tracklist.map(track => `
+                      <div class="track">
+                        <span class="track-position">${track.position || ''}</span>
+                        <span class="track-title">${track.title || ''}</span>
+                        ${track.duration ? `<span class="track-duration" style="margin-left: auto; color: #64748b;">${track.duration}</span>` : ''}
+                      </div>
+                    `).join('')}
+                  </div>
+                  ${lastfmConnected ? `
+                    <button class="scrobble-btn" data-album-id="${album.id}" data-artist="${album.artist}" data-title="${album.title}">
+                      🎵 Scrobble to Last.fm
+                    </button>
+                  ` : ''}
+                ` : ''}
+              </div>
+            </div>
+          `;
+        })
+        .catch(error => {
+          modalBody.innerHTML = `<div class="loading">Error loading album: ${error.message}</div>`;
+        });
+    }
+
+    function closeModal() {
+      document.getElementById('modal').classList.remove('active');
+    }
+
+    function openAiModal() {
+      if (collection.length === 0) {
+        alert('Please load your collection first!');
+        return;
+      }
+      // Reset the form and display state
+      document.getElementById('aiInputSection').style.display = 'block';
+      document.getElementById('aiRecommendationsSection').style.display = 'none';
+      document.getElementById('aiQuery').value = '';
+      
+      // Reset button state
+      const btn = document.getElementById('getRecommendationBtn');
+      btn.disabled = false;
+      btn.textContent = 'Get Recommendations';
+      
+      document.getElementById('aiModal').classList.add('active');
+      document.getElementById('aiQuery').focus();
+    }
+
+    function closeAiModal() {
+      document.getElementById('aiModal').classList.remove('active');
+      // Reset the form
+      document.getElementById('aiInputSection').style.display = 'block';
+      document.getElementById('aiRecommendationsSection').style.display = 'none';
+      document.getElementById('aiQuery').value = '';
+    }
+
+    async function getAiRecommendations() {
+      const query = document.getElementById('aiQuery').value.trim();
+      
+      if (!query) {
+        alert('Please describe your music preference!');
+        return;
+      }
+
+      const btn = document.getElementById('getRecommendationBtn');
+      btn.disabled = true;
+      btn.textContent = '🤔 Thinking...';
+
+      try {
+        const response = await fetch('/api/ai/recommend', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          showAiError(data.error || 'Unknown error occurred');
+          btn.disabled = false;
+          btn.textContent = 'Get Recommendations';
+          return;
+        }
+
+        displayAiRecommendations(data.recommendations);
+      } catch (error) {
+        console.error('Recommendation error:', error);
+        showAiError('Network error: ' + error.message);
+        btn.disabled = false;
+        btn.textContent = 'Get Recommendations';
+      }
+    }
+
+    function showAiError(errorMessage) {
+      document.getElementById('aiInputSection').style.display = 'none';
+      const section = document.getElementById('aiRecommendationsSection');
+      section.style.display = 'block';
+      
+      section.innerHTML = `
+        <div style="background: #7c2d12; border: 1px solid #ea580c; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+          <p style="margin: 0; color: #fed7aa;"><strong>⚠️ Error:</strong></p>
+          <p style="margin: 10px 0 0 0; color: #fecaca;">${errorMessage}</p>
+        </div>
+        <div style="display: flex; gap: 10px;">
+          <button onclick="closeAiModal()" style="flex: 1; background: #64748b; padding: 12px;">Close</button>
+          <button onclick="openAiModal()" style="flex: 1; background: #ec4899; padding: 12px;">Try Again</button>
+        </div>
+      `;
+    }
+
+    function displayAiRecommendations(recommendations) {
+      document.getElementById('aiInputSection').style.display = 'none';
+      const section = document.getElementById('aiRecommendationsSection');
+      section.style.display = 'block';
+
+      section.innerHTML = `
+        <div style="margin-bottom: 20px;">
+          <h3 style="margin-bottom: 15px; color: #94a3b8;">Recommended for you:</h3>
+          ${recommendations.map((rec, idx) => `
+            <div class="ai-recommendation" onclick="closeAiModal(); showDetails(${rec.id})">
+              <div class="ai-recommendation-header">
+                ${rec.thumb ? `
+                  <div class="ai-recommendation-cover">
+                    <img src="${rec.thumb}" alt="${rec.title}" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22%3E%3Crect fill=%22%23334155%22 width=%22100%22 height=%22100%22/%3E%3C/svg%3E'">
+                  </div>
+                ` : `
+                  <div class="ai-recommendation-cover" style="background: #334155;"></div>
+                `}
+                <div class="ai-recommendation-title">
+                  <h3>${rec.artist} - ${rec.title}</h3>
+                  <div class="artist">${rec.year ? rec.year : ''}</div>
+                  ${rec.rating ? `<div class="meta">Rating: ${'★'.repeat(rec.rating)}${'☆'.repeat(5-rec.rating)}</div>` : ''}
+                  ${rec.format ? `<div class="meta">Format: ${rec.format}</div>` : ''}
+                </div>
+              </div>
+              <div class="ai-recommendation-reason">"${rec.reason}"</div>
+            </div>
+          `).join('')}
+        </div>
+        <div style="display: flex; gap: 10px; margin-top: 20px;">
+          <button onclick="closeAiModal()" style="flex: 1; background: #64748b; padding: 12px;">Close</button>
+          <button onclick="openAiModal()" style="flex: 1; background: #ec4899; padding: 12px;">Try Again</button>
+        </div>
+      `;
+    }
+
+    async function scrobbleAlbum(button) {
+      const albumId = button.dataset.albumId;
+      const artist = button.dataset.artist;
+      const albumTitle = button.dataset.title;
+      console.log('Scrobble clicked:', albumId, artist, albumTitle);
+      
+      button.disabled = true;
+      button.textContent = 'Scrobbling...';
+
+      try {
+        // Get fresh album data with tracklist
+        const response = await fetch(`/api/release/${albumId}`);
+        const data = await response.json();
+        
+        console.log('Album data:', data);
+        
+        if (!data.tracklist || data.tracklist.length === 0) {
+          alert('No tracklist available for this album');
+          button.disabled = false;
+          button.textContent = '🎵 Scrobble to Last.fm';
+          return;
+        }
+
+        console.log('Sending scrobble request...');
+        const scrobbleResponse = await fetch('/api/lastfm/scrobble', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            artist: artist,
+            album: albumTitle,
+            tracks: data.tracklist
+          })
+        });
+
+        const result = await scrobbleResponse.json();
+        console.log('Scrobble result:', result);
+        
+        if (result.success) {
+          button.textContent = `✓ Scrobbled ${result.scrobbled} tracks!`;
+          button.style.background = '#10b981';
+          setTimeout(() => {
+            button.textContent = '🎵 Scrobble to Last.fm';
+            button.style.background = '#d51007';
+            button.disabled = false;
+          }, 3000);
+        } else {
+          alert('Scrobble failed: ' + result.error);
+          button.disabled = false;
+          button.textContent = '🎵 Scrobble to Last.fm';
+        }
+      } catch (error) {
+        console.error('Scrobble error:', error);
+        alert('Error scrobbling: ' + error.message);
+        button.disabled = false;
+        button.textContent = '🎵 Scrobble to Last.fm';
+      }
+    }
+
+    // Close modal when clicking outside
+    document.getElementById('modal').addEventListener('click', (e) => {
+      if (e.target.id === 'modal') {
+        closeModal();
+      }
+      if (e.target.classList.contains('scrobble-btn')) {
+        scrobbleAlbum(e.target);
+      }
+    });
+
+    // Close AI modal when clicking outside
+    document.getElementById('aiModal').addEventListener('click', (e) => {
+      if (e.target.id === 'aiModal') {
+        closeAiModal();
+      }
+    });
+
+    async function rateAlbum(albumId, rating) {
+      console.log('Rating album:', albumId, 'with', rating, 'stars');
+      
+      try {
+        const response = await fetch(`/api/release/${albumId}/rate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rating })
+        });
+
+        const result = await response.json();
+        console.log('Rating result:', result);
+
+        if (result.success) {
+          // Update the local collection cache
+          const album = collection.find(a => a.id === albumId);
+          if (album) {
+            album.rating = rating;
+          }
+
+          // Update the stars display
+          const starsDisplay = document.querySelector('.stars');
+          const stars = '★'.repeat(rating) + '☆'.repeat(5 - rating);
+          starsDisplay.textContent = stars;
+
+          // Update the rating buttons
+          document.querySelectorAll('.rating-star').forEach((star, index) => {
+            if (index < rating) {
+              star.classList.add('active');
+            } else {
+              star.classList.remove('active');
+            }
+          });
+
+          // Show brief success message
+          document.getElementById('status').textContent = 
+            `✓ Rated ${rating} stars and synced to Discogs!`;
+        } else {
+          alert('Failed to update rating: ' + result.error);
+        }
+      } catch (error) {
+        console.error('Rating error:', error);
+        alert('Error updating rating: ' + error.message);
+      }
+    }
+  </script>
+</body>
+</html>
