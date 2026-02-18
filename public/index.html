@@ -167,11 +167,6 @@
       font-weight: bold;
       min-width: 80px;
     }
-    .stars {
-      color: #fbbf24;
-      font-size: 1.4rem;
-      letter-spacing: 2px;
-    }
     .rating-selector {
       display: flex;
       gap: 8px;
@@ -221,6 +216,20 @@
       background: #ba0d06;
     }
     .scrobble-btn:disabled {
+      background: #64748b;
+    }
+    .rym-link {
+      display: inline-block;
+      margin-top: 10px;
+      background: #475569;
+      color: white;
+      text-decoration: none;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 0.95rem;
+      transition: background 0.2s;
+    }
+    .rym-link:hover {
       background: #64748b;
     }
     .ai-recommendation {
@@ -356,6 +365,8 @@
 
     // Check Last.fm connection status on load
     checkLastfmStatus();
+    // Load collection on startup
+    loadCollection();
     
     // Check for Last.fm callback
     const urlParams = new URLSearchParams(window.location.search);
@@ -493,6 +504,24 @@
       renderCollection(filtered);
     }
 
+    function toRymSlug(value) {
+      if (!value) return '';
+      return value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/&/g, ' and ')
+        .replace(/['’]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    }
+
+    function getRymAlbumUrl(artist, title) {
+      const artistSlug = toRymSlug(artist) || 'unknown-artist';
+      const titleSlug = toRymSlug(title) || 'unknown-album';
+      return `https://rateyourmusic.com/release/album/${artistSlug}/${titleSlug}/`;
+    }
+
     function showDetails(id) {
       const modal = document.getElementById('modal');
       const modalBody = document.getElementById('modalBody');
@@ -503,7 +532,6 @@
       fetch(`/api/release/${id}`)
         .then(response => response.json())
         .then(album => {
-          const stars = '★'.repeat(album.rating || 0) + '☆'.repeat(5 - (album.rating || 0));
           const tracklist = album.tracklist || [];
           
           modalBody.innerHTML = `
@@ -534,7 +562,6 @@
                   <div class="meta-item">
                     <span class="meta-label">My Rating:</span>
                     <div>
-                      <span class="stars">${stars}</span>
                       <div class="rating-selector">
                         ${[1, 2, 3, 4, 5].map(num => 
                           `<span class="rating-star ${num <= (album.rating || 0) ? 'active' : ''}" 
@@ -544,6 +571,10 @@
                     </div>
                   </div>
                 </div>
+
+                <a class="rym-link" href="${getRymAlbumUrl(album.artist, album.title)}" target="_blank" rel="noopener noreferrer">
+                  Open on Rate Your Music ↗
+                </a>
 
                 ${tracklist.length > 0 ? `
                   <div class="tracklist">
@@ -786,11 +817,6 @@
           if (album) {
             album.rating = rating;
           }
-
-          // Update the stars display
-          const starsDisplay = document.querySelector('.stars');
-          const stars = '★'.repeat(rating) + '☆'.repeat(5 - rating);
-          starsDisplay.textContent = stars;
 
           // Update the rating buttons
           document.querySelectorAll('.rating-star').forEach((star, index) => {
