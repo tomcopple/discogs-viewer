@@ -9,6 +9,20 @@ const { OpenAI } = require('openai');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+function isCdTrackEntry(track) {
+  const position = (track?.position || '').toString().trim();
+  const title = (track?.title || '').toString().trim();
+  const type = (track?.type_ || '').toString().trim();
+
+  // Discogs CD entries are often encoded as CD1, CD1-1, or heading/title markers.
+  const cdPattern = /\bCD\s*\d*\b/i;
+  return cdPattern.test(position) || cdPattern.test(title) || cdPattern.test(type);
+}
+
+function filterCdTrackEntries(tracklist) {
+  return (tracklist || []).filter((track) => !isCdTrackEntry(track));
+}
+
 // Last.fm API configuration
 const LASTFM_API_KEY = process.env.LASTFM_API_KEY;
 const LASTFM_SECRET = process.env.LASTFM_SECRET;
@@ -205,8 +219,8 @@ app.get('/api/release/:id', (req, res) => {
       
       console.log(`Got release data, tracklist length: ${data.tracklist ? data.tracklist.length : 0}`);
       
-      // Update database with full details
-      const tracklist = data.tracklist || [];
+      // Update database with full details, excluding CD-only track entries.
+      const tracklist = filterCdTrackEntries(data.tracklist || []);
       db.run(
         'UPDATE collection SET tracklist = ? WHERE id = ?',
         [JSON.stringify(tracklist), id],
@@ -484,8 +498,9 @@ app.post('/api/lastfm/scrobble', express.json(), async (req, res) => {
   }
 
   const { artist, album, tracks } = req.body;
+  const filteredTracks = filterCdTrackEntries(tracks || []);
   
-  if (!tracks || tracks.length === 0) {
+  if (filteredTracks.length === 0) {
     return res.status(400).json({ error: 'No tracks to scrobble' });
   }
 
@@ -506,12 +521,12 @@ app.post('/api/lastfm/scrobble', express.json(), async (req, res) => {
     const scrobbles = {};
     
     // Work backwards from now, using actual track durations
-    for (let i = tracks.length - 1; i >= 0 && (tracks.length - i - 1) < 50; i--) {
-      const track = tracks[i];
+    for (let i = filteredTracks.length - 1; i >= 0 && (filteredTracks.length - i - 1) < 50; i--) {
+      const track = filteredTracks[i];
       const duration = durationToSeconds(track.duration);
       currentTimestamp -= duration;
       
-      const index = tracks.length - i - 1;
+      const index = filteredTracks.length - i - 1;
       scrobbles[`artist[${index}]`] = artist;
       scrobbles[`track[${index}]`] = track.title;
       scrobbles[`album[${index}]`] = album;

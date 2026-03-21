@@ -69,24 +69,25 @@ A personal vinyl collection viewer that syncs with your Discogs account, display
 
 1. **Prepare NAS directory** (create it first and verify permissions)
    ```bash
-   ssh username@nas-ip "mkdir -p /volume1/docker/discogs-viewer"
+   ssh username@nas-ip "mkdir -p /volume2/docker/discogs-viewer"
    ```
 
 2. **Copy project to NAS** (using rsync to exclude node_modules)
+  NB Need to be in R folder (not discogs-viewer)
    ```bash
-   rsync -av --exclude 'node_modules' discogs-viewer/ nas:/volume1/docker/discogs-viewer/
+   rsync -av --exclude 'node_modules' discogs-viewer/ nas:/volume2/docker/discogs-viewer/
    ```
    
    Or if rsync isn't working, use scp then delete node_modules on NAS:
    ```bash
-   scp -r discogs-viewer/ username@nas-ip:/volume1/docker/
-   ssh username@nas-ip "rm -rf /volume1/docker/discogs-viewer/node_modules"
+   scp -r discogs-viewer/ username@nas-ip:/volume2/docker/
+   ssh username@nas-ip "rm -rf /volume2/docker/discogs-viewer/node_modules"
    ```
 
 3. **SSH into NAS**
    ```bash
    ssh username@nas-ip
-   cd /volume1/docker/discogs-viewer
+   cd /volume2/docker/discogs-viewer
    ```
 
 3. **Create/verify `.env` file** with your credentials:
