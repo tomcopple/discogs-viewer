@@ -43,6 +43,15 @@
       flex: 1;
       min-width: 200px;
     }
+    select {
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid #475569;
+      background: #1e293b;
+      color: #e2e8f0;
+      font-size: 1rem;
+      cursor: pointer;
+    }
     .status {
       background: #334155;
       padding: 15px;
@@ -306,6 +315,18 @@
       <button id="randomBtn" style="background: #8b5cf6;">🎲 Random Unrated</button>
       <button id="aiBtn" style="background: #ec4899;">🤖 AI Recommend</button>
       <input type="text" id="searchInput" placeholder="Search by artist or title...">
+      <select id="filterSelect" aria-label="Filter albums">
+        <option value="all">All albums</option>
+        <option value="unrated">Unrated</option>
+        <option value="rated">Rated</option>
+      </select>
+      <select id="sortSelect" aria-label="Sort albums">
+        <option value="artist">Sort: Artist</option>
+        <option value="title">Sort: Title</option>
+        <option value="rating">Sort: Rating</option>
+        <option value="year-desc">Sort: Year (newest)</option>
+        <option value="year-asc">Sort: Year (oldest)</option>
+      </select>
     </div>
 
     <div class="status" id="status">
@@ -358,7 +379,17 @@
 
     document.getElementById('syncBtn').addEventListener('click', syncCollection);
     document.getElementById('loadBtn').addEventListener('click', loadCollection);
-    document.getElementById('searchInput').addEventListener('input', filterCollection);
+    document.getElementById('searchInput').addEventListener('input', applyView);
+    document.getElementById('filterSelect').addEventListener('change', applyView);
+    document.getElementById('sortSelect').addEventListener('change', applyView);
+
+    // Esc closes whichever modal is open
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeModal();
+        closeAiModal();
+      }
+    });
     document.getElementById('lastfmBtn').addEventListener('click', connectLastfm);
     document.getElementById('randomBtn').addEventListener('click', showRandomUnrated);
     document.getElementById('aiBtn').addEventListener('click', openAiModal);
@@ -478,8 +509,7 @@
           status.textContent = data.message || 'No albums found.';
           grid.innerHTML = '';
         } else {
-          status.textContent = `📀 Showing ${collection.length} albums`;
-          renderCollection(collection);
+          applyView();
         }
       } catch (error) {
         status.textContent = `❌ Error loading: ${error.message}`;
@@ -502,15 +532,35 @@
       `).join('');
     }
 
-    function filterCollection(e) {
-      const search = e.target.value.toLowerCase();
-      const filtered = collection.filter(album => 
-        album.title.toLowerCase().includes(search) ||
-        album.artist.toLowerCase().includes(search)
+    // Apply the search box, filter and sort dropdowns to the collection and re-render
+    function applyView() {
+      const search = document.getElementById('searchInput').value.toLowerCase();
+      const filter = document.getElementById('filterSelect').value;
+      const sort = document.getElementById('sortSelect').value;
+
+      const filtered = collection.filter(album =>
+        (album.title.toLowerCase().includes(search) ||
+         album.artist.toLowerCase().includes(search)) &&
+        (filter === 'all' ||
+         (filter === 'unrated' && !album.rating) ||
+         (filter === 'rated' && album.rating > 0))
       );
-      
-      document.getElementById('status').textContent = 
-        `📀 Showing ${filtered.length} of ${collection.length} albums`;
+
+      // Albums with an unknown year (0) go last in either year order
+      const byText = (key) => (a, b) => a[key].localeCompare(b[key]);
+      const byYear = (dir) => (a, b) => (!a.year - !b.year) || dir * (a.year - b.year);
+      const comparators = {
+        artist: (a, b) => byText('artist')(a, b) || byText('title')(a, b),
+        title: byText('title'),
+        rating: (a, b) => (b.rating || 0) - (a.rating || 0) || byText('artist')(a, b),
+        'year-desc': byYear(-1),
+        'year-asc': byYear(1)
+      };
+      filtered.sort(comparators[sort]);
+
+      document.getElementById('status').textContent = filtered.length === collection.length
+        ? `📀 Showing ${collection.length} albums`
+        : `📀 Showing ${filtered.length} of ${collection.length} albums`;
       renderCollection(filtered);
     }
 
@@ -810,7 +860,7 @@
 
     async function rateAlbum(albumId, rating) {
       console.log('Rating album:', albumId, 'with', rating, 'stars');
-      
+
       try {
         const response = await fetch(`/api/release/${albumId}/rate`, {
           method: 'POST',
@@ -837,8 +887,10 @@
             }
           });
 
-          // Show brief success message
-          document.getElementById('status').textContent = 
+          // Refresh the grid so the filter/sort reflect the new rating,
+          // then show a brief success message in place of the album count
+          applyView();
+          document.getElementById('status').textContent =
             `✓ Rated ${rating} stars and synced to Discogs!`;
         } else {
           alert('Failed to update rating: ' + result.error);

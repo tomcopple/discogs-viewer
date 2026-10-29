@@ -65,6 +65,13 @@ db.serialize(() => {
   db.run(`ALTER TABLE collection ADD COLUMN tracklist TEXT DEFAULT '[]'`, (err) => {
     if (err && !err.message.includes('duplicate column')) console.log('Tracklist column exists');
   });
+  // Discogs IDs for this copy of the release, needed to edit its rating
+  db.run(`ALTER TABLE collection ADD COLUMN folder_id INTEGER`, (err) => {
+    if (err && !err.message.includes('duplicate column')) console.log('Folder ID column exists');
+  });
+  db.run(`ALTER TABLE collection ADD COLUMN instance_id INTEGER`, (err) => {
+    if (err && !err.message.includes('duplicate column')) console.log('Instance ID column exists');
+  });
   
   // Load Last.fm session key from database
   db.get('SELECT value FROM settings WHERE key = ?', ['lastfm_session_key'], (err, row) => {
@@ -142,9 +149,11 @@ app.post('/api/sync', async (req, res) => {
 
         // Upsert so cached tracklists survive a re-sync
         const stmt = db.prepare(`
-          INSERT INTO collection (id, title, artist, year, thumb, cover_image, format, label, rating, tracklist, last_synced)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?)
+          INSERT INTO collection (id, title, artist, year, thumb, cover_image, format, label, rating, folder_id, instance_id, tracklist, last_synced)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?)
           ON CONFLICT(id) DO UPDATE SET
+            folder_id = excluded.folder_id,
+            instance_id = excluded.instance_id,
             title = excluded.title,
             artist = excluded.artist,
             year = excluded.year,
@@ -183,6 +192,8 @@ app.post('/api/sync', async (req, res) => {
             formats,
             labels,
             release.rating || 0,  // This is YOUR rating from your collection
+            release.folder_id,
+            release.instance_id,
             syncTime,
             (err) => {
               if (err) console.error(`Error saving release ${release.id}:`, err);
@@ -261,66 +272,69 @@ app.get('/api/release/:id', (req, res) => {
   });
 });
 
-app.post('/api/release/:id/rate', express.json(), async (req, res) => {
+// Find the Discogs folder/instance IDs for a release. They're saved at sync, but
+// rows synced before those columns existed need a (slow) full collection fetch.
+function getCollectionInstance(id, callback) {
+  db.get('SELECT folder_id, instance_id FROM collection WHERE id = ?', [id], (err, row) => {
+    if (err) return callback(err);
+    if (row?.instance_id) return callback(null, row);
+
+    dis.user().collection().getReleases(process.env.DISCOGS_USERNAME, 0, { per_page: 500 }, (err, data) => {
+      if (err) return callback(err);
+      const release = data.releases.find(r => r.id == id);
+      callback(null, release && { folder_id: release.folder_id, instance_id: release.instance_id });
+    });
+  });
+}
+
+app.post('/api/release/:id/rate', express.json(), (req, res) => {
   const id = req.params.id;
   const { rating } = req.body;
-  
-  if (rating < 0 || rating > 5) {
-    return res.status(400).json({ error: 'Rating must be between 0 and 5' });
+
+  // The Discogs API silently ignores 0, so a rating can't be cleared from here
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+    return res.status(400).json({ error: 'Rating must be a whole number between 1 and 5' });
   }
 
-  try {
-    const username = process.env.DISCOGS_USERNAME;
-    
-    // Get the instance_id from collection
-    dis.user().collection().getReleases(username, 0, { per_page: 500 }, (err, data) => {
-      if (err) {
-        console.error('Error fetching collection:', err);
-        return res.status(500).json({ error: err.message });
-      }
+  getCollectionInstance(id, (err, instance) => {
+    if (err) {
+      console.error('Error looking up release:', err);
+      return res.status(500).json({ error: err.message });
+    }
+    if (!instance) {
+      return res.status(404).json({ error: 'Release not found in collection' });
+    }
 
-      const release = data.releases.find(r => r.id == id);
-      if (!release) {
-        return res.status(404).json({ error: 'Release not found in collection' });
-      }
-
-      const folderId = release.folder_id || 1; // Default folder
-      const instanceId = release.instance_id;
-
-      // Update rating on Discogs
-      dis.user().collection().editRelease(
-        username,
-        folderId,
-        id,
-        instanceId,
-        { rating: rating },
-        (err, data) => {
-          if (err) {
-            console.error('Error updating Discogs rating:', err);
-            return res.status(500).json({ error: err.message });
-          }
-
-          // Update local database
-          db.run(
-            'UPDATE collection SET rating = ? WHERE id = ?',
-            [rating, id],
-            (dbErr) => {
-              if (dbErr) {
-                console.error('Error updating local rating:', dbErr);
-                return res.status(500).json({ error: dbErr.message });
-              }
-
-              console.log(`Updated rating for release ${id} to ${rating}`);
-              res.json({ success: true, rating: rating });
-            }
-          );
+    // Update rating on Discogs
+    dis.user().collection().editRelease(
+      process.env.DISCOGS_USERNAME,
+      instance.folder_id || 1, // Default folder
+      id,
+      instance.instance_id,
+      { rating: rating },
+      (err) => {
+        if (err) {
+          console.error('Error updating Discogs rating:', err);
+          return res.status(500).json({ error: err.message });
         }
-      );
-    });
-  } catch (error) {
-    console.error('Rating error:', error);
-    res.status(500).json({ error: error.message });
-  }
+
+        // Update local database
+        db.run(
+          'UPDATE collection SET rating = ? WHERE id = ?',
+          [rating, id],
+          (dbErr) => {
+            if (dbErr) {
+              console.error('Error updating local rating:', dbErr);
+              return res.status(500).json({ error: dbErr.message });
+            }
+
+            console.log(`Updated rating for release ${id} to ${rating}`);
+            res.json({ success: true, rating: rating });
+          }
+        );
+      }
+    );
+  });
 });
 
 // Health check
@@ -407,26 +421,23 @@ app.post('/api/ai/recommend', express.json(), async (req, res) => {
         return res.status(400).json({ error: 'No albums in collection' });
       }
 
-      // Format collection data for the AI
-      const collectionText = rows.map(r => 
-        `${r.artist} - ${r.title} (${r.year}) [Rating: ${r.rating}/5] [Format: ${r.format}]`
+      // One line per album, keyed by Discogs ID so the AI's picks can be matched exactly.
+      // Unknown years and unrated albums are left blank rather than shown as 0.
+      const collectionText = rows.map(r =>
+        `${r.id} | ${r.artist} - ${r.title}${r.year ? ` (${r.year})` : ''}${r.rating ? ` ★${r.rating}` : ''}`
       ).join('\n');
 
-      const systemPrompt = `You are a music recommendation expert. The user has a vinyl collection and you need to recommend exactly 3 albums from their collection based on their mood or preference description.
+      const systemPrompt = `You are a music recommendation expert helping someone pick a record to play from their own vinyl collection. Recommend exactly 3 albums from the collection below that suit their mood or request.
 
-Return your response as a JSON array with exactly 3 recommendations. Each recommendation should have:
-- artist: the artist name
-- title: the album title
-- reason: a brief explanation (1-2 sentences) why this album matches their request
+Guidelines:
+- Only recommend albums from the list, and return each one's ID exactly as listed.
+- Pick three different artists.
+- ★1-★5 is the user's own rating. Albums without stars simply haven't been rated yet — that is most of the collection, so don't avoid them.
+- Years are when that copy was pressed, which may be a later reissue. Use your own knowledge of when an album was originally released.
+- For each pick, give a 1-2 sentence reason that refers to the music itself (sound, feel, era, standout qualities), rather than repeating the user's request back to them.
+- If nothing in the collection fits the request well, still pick the 3 closest matches, and say honestly in each reason how it differs from what was asked.
 
-Example format:
-[
-  {"artist": "Artist Name", "title": "Album Title", "reason": "This album is perfect because..."},
-  {"artist": "Another Artist", "title": "Another Album", "reason": "This one captures..."},
-  {"artist": "Third Artist", "title": "Third Album", "reason": "You'll enjoy..."}
-]
-
-Recommend from this collection only:
+Collection (ID | Artist - Title (pressing year) rating):
 ${collectionText}`;
 
       try {
@@ -442,39 +453,57 @@ ${collectionText}`;
               role: 'user',
               content: `My mood/preference: ${query}`
             }
-          ]
+          ],
+          // Structured output guarantees parseable JSON in this shape
+          response_format: {
+            type: 'json_schema',
+            json_schema: {
+              name: 'recommendations',
+              strict: true,
+              schema: {
+                type: 'object',
+                properties: {
+                  recommendations: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        id: { type: 'integer' },
+                        reason: { type: 'string' }
+                      },
+                      required: ['id', 'reason'],
+                      additionalProperties: false
+                    }
+                  }
+                },
+                required: ['recommendations'],
+                additionalProperties: false
+              }
+            }
+          }
         });
 
-        const responseText = message.choices[0].message.content;
-        
-        // Parse the JSON response
-        const jsonMatch = responseText.match(/\[\s*{[\s\S]*}\s*\]/);
-        if (!jsonMatch) {
-          console.error('Could not parse AI response:', responseText);
-          return res.status(500).json({ error: 'Failed to parse AI recommendations' });
-        }
+        const { recommendations } = JSON.parse(message.choices[0].message.content);
 
-        const recommendations = JSON.parse(jsonMatch[0]);
-        
-        // Enhance recommendations with full album data from collection
-        // No artist-only fallback: that would show a different album alongside the AI's reason
-        const enhancedRecommendations = recommendations.map(rec => {
-          const album = rec.artist && rec.title && rows.find(r =>
-            r.artist.toLowerCase().includes(rec.artist.toLowerCase()) &&
-            r.title.toLowerCase().includes(rec.title.toLowerCase())
-          );
-          
-          return {
-            ...rec,
-            id: album?.id,
-            year: album?.year,
-            rating: album?.rating,
-            thumb: album?.thumb,
-            format: album?.format,
-            found: !!album  // Track whether we found this album
-          };
-        }).filter(rec => rec.found);  // Only return recommendations that actually exist in collection
-        
+        // Look up each pick by ID; drop any ID that isn't in the collection or is repeated
+        const albumsById = new Map(rows.map(r => [r.id, r]));
+        const seenIds = new Set();
+        const enhancedRecommendations = recommendations
+          .filter(rec => albumsById.has(rec.id) && !seenIds.has(rec.id) && seenIds.add(rec.id))
+          .map(rec => {
+            const album = albumsById.get(rec.id);
+            return {
+              id: album.id,
+              artist: album.artist,
+              title: album.title,
+              year: album.year,
+              rating: album.rating,
+              thumb: album.thumb,
+              format: album.format,
+              reason: rec.reason
+            };
+          });
+
         // If too many recommendations were hallucinations, ask AI to try again
         if (enhancedRecommendations.length < 2) {
           return res.status(500).json({ error: 'AI could not find enough valid recommendations in your collection. Try a different search term or reload your collection.' });
