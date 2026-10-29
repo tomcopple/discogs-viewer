@@ -17,7 +17,7 @@ A personal vinyl collection viewer that syncs with your Discogs account, display
 - **Backend**: Node.js + Express + SQLite3
 - **Frontend**: Vanilla JS + HTML/CSS
 - **External APIs**: Discogs API, OpenAI API, Last.fm API
-- **Deployment**: Docker + docker-compose
+- **Deployment**: Docker, as a service in the NAS compose stack
 
 ---
 
@@ -60,78 +60,49 @@ A personal vinyl collection viewer that syncs with your Discogs account, display
 
 ## Deployment to NAS (Docker)
 
-### Prerequisites
-- Docker installed on NAS
-- docker-compose installed on NAS
-- 1GB+ free storage for database
+The app runs as the `discogs-viewer` service in the NAS's main compose stack at
+`/volume2/docker/compose/docker-compose.yml`, alongside the other containers. The
+service builds from source in `/volume2/docker/discogs-viewer`, and reads its API
+keys from the `.env` file in that folder at runtime (they are not baked into the image).
 
-### Steps
+### Deploy code changes (run from your Mac)
 
-1. **Prepare NAS directory** (create it first and verify permissions)
-   ```bash
-   ssh username@nas-ip "mkdir -p /volume2/docker/discogs-viewer"
-   ```
+```bash
+rsync -av --exclude 'node_modules' --exclude '/data/' --exclude '.env' --exclude '.DS_Store' \
+  /Users/tomcopple/R/discogs-viewer/ nas:/volume2/docker/discogs-viewer/
+ssh nas "cd /volume2/docker/compose && docker compose up -d --build discogs-viewer"
+```
+- Use the full source path so it works from any folder, and keep the trailing `/`
+- `/data/` is excluded so your local `collection.db` doesn't overwrite the one on the NAS
+- `.env` is excluded so the NAS keeps its own copy
+- `--build` rebuilds the image so it picks up code changes; naming the service leaves the rest of the stack alone
+- If rsync reports `0 files` and exits with status 23, it couldn't find the source folder — check the path
 
-2. **Copy project to NAS** (using rsync to exclude node_modules)
-  NB Need to be in R folder (not discogs-viewer)
-   ```bash
-   rsync -av --exclude 'node_modules' discogs-viewer/ nas:/volume2/docker/discogs-viewer/
-   ```
-   
-   Or if rsync isn't working, use scp then delete node_modules on NAS:
-   ```bash
-   scp -r discogs-viewer/ username@nas-ip:/volume2/docker/
-   ssh username@nas-ip "rm -rf /volume2/docker/discogs-viewer/node_modules"
-   ```
+Then open `http://192.168.1.99:3000`.
 
-3. **SSH into NAS**
-   ```bash
-   ssh username@nas-ip
-   cd /volume2/docker/discogs-viewer
-   ```
+### `.env` on the NAS
 
-3. **Create/verify `.env` file** with your credentials:
-   ```bash
-   cat > .env << 'EOF'
-   DISCOGS_USERNAME=your_username
-   DISCOGS_TOKEN=your_personal_access_token
-   LASTFM_API_KEY=your_lastfm_key
-   LASTFM_SECRET=your_lastfm_secret
-   OPENAI_API_KEY=your_openai_key
-   PORT=3000
-   EOF
-   ```
-
-4. **Start the container**
-   ```bash
-   docker-compose up -d
-   ```
-   - `-d` runs in background
-   - Container will restart automatically on reboot
-
-5. **Access the app**
-   - Open browser: `http://nas-ip:3000`
+`/volume2/docker/discogs-viewer/.env` must exist with:
+```bash
+DISCOGS_USERNAME=your_username
+DISCOGS_TOKEN=your_personal_access_token
+LASTFM_API_KEY=your_lastfm_key
+LASTFM_SECRET=your_lastfm_secret
+OPENAI_API_KEY=your_openai_key
+# Optional: defaults to gpt-5.4-mini
+# OPENAI_MODEL=gpt-5.4-mini
+```
+After changing it, recreate the container (no rebuild needed):
+`ssh nas "cd /volume2/docker/compose && docker compose up -d discogs-viewer"`
 
 ### Managing the Container
 
-**View logs**
-```bash
-docker-compose logs -f
-```
+Run these from `/volume2/docker/compose` on the NAS:
 
-**Stop the app**
 ```bash
-docker-compose down
-```
-
-**Rebuild after code changes**
-```bash
-docker-compose up -d --build
-```
-
-**Check container status**
-```bash
-docker-compose ps
+docker compose logs -f discogs-viewer   # view logs
+docker compose stop discogs-viewer      # stop the app
+docker compose ps discogs-viewer        # check status
 ```
 
 ---
@@ -148,7 +119,7 @@ docker-compose ps
 1. Go to https://platform.openai.com/api-keys
 2. Create new API key
 3. Add to `.env` as `OPENAI_API_KEY`
-4. Ensure you have billing enabled (GPT-3.5 Turbo is cheap)
+4. Ensure you have billing enabled (gpt-5.4-mini is the default and cheap; override with `OPENAI_MODEL` in `.env`)
 
 ### Last.fm API
 1. Go to https://www.last.fm/api/account/create
@@ -189,22 +160,22 @@ docker-compose ps
 ### "OpenAI quota exceeded"
 - Check your OpenAI billing in account settings
 - Set usage limits if needed to avoid surprises
-- Consider using GPT-3.5 Turbo for cost efficiency
+- Set `OPENAI_MODEL` to a cheaper model (e.g. `gpt-5.4-nano`) for cost efficiency
 
 ### "No albums found" after sync
 - Verify `DISCOGS_USERNAME` and `DISCOGS_TOKEN` are correct
 - Check Discogs has items in your collection folder
-- Check server logs: `docker-compose logs`
+- Check server logs: `docker compose logs discogs-viewer` (from `/volume2/docker/compose`)
 
 ### Database locked / sync fails
-- Stop container: `docker-compose down`
-- Delete old database: `rm data/collection.db`
-- Restart: `docker-compose up -d`
+- Stop container: `docker compose stop discogs-viewer` (from `/volume2/docker/compose`)
+- Delete old database: `rm /volume2/docker/discogs-viewer/data/collection.db` (this also forgets the Last.fm login)
+- Restart: `docker compose up -d discogs-viewer`
 
 ### App not accessible on NAS
 - Check firewall allows port 3000
-- Verify container is running: `docker-compose ps`
-- Check logs: `docker-compose logs`
+- Verify container is running: `docker compose ps discogs-viewer`
+- Check logs: `docker compose logs discogs-viewer`
 
 ---
 

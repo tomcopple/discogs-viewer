@@ -133,20 +133,36 @@ app.post('/api/sync', async (req, res) => {
         return res.status(500).json({ error: err.message });
       }
 
-      // Clear existing data
-      db.run('DELETE FROM collection', (err) => {
-        if (err) {
-          return res.status(500).json({ error: err.message });
-        }
+      // Every row touched by this sync gets the same timestamp, so anything left
+      // with an older one has been removed from the Discogs collection.
+      const syncTime = new Date().toISOString().replace('T', ' ').slice(0, 19);
 
-        // Insert new data
+      db.serialize(() => {
+        db.run('BEGIN TRANSACTION');
+
+        // Upsert so cached tracklists survive a re-sync
         const stmt = db.prepare(`
-          INSERT INTO collection (id, title, artist, year, thumb, cover_image, format, label, rating, tracklist)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO collection (id, title, artist, year, thumb, cover_image, format, label, rating, tracklist, last_synced)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?)
+          ON CONFLICT(id) DO UPDATE SET
+            title = excluded.title,
+            artist = excluded.artist,
+            year = excluded.year,
+            thumb = excluded.thumb,
+            cover_image = excluded.cover_image,
+            format = excluded.format,
+            label = excluded.label,
+            rating = excluded.rating,
+            last_synced = excluded.last_synced
         `);
 
         let insertCount = 0;
+        const seenIds = new Set();
         data.releases.forEach((release) => {
+          // Duplicate copies of the same release are logging mistakes; keep the first
+          if (seenIds.has(release.id)) return;
+          seenIds.add(release.id);
+
           const artists = release.basic_information.artists
             .map(a => a.name)
             .join(', ');
@@ -167,17 +183,24 @@ app.post('/api/sync', async (req, res) => {
             formats,
             labels,
             release.rating || 0,  // This is YOUR rating from your collection
-            '[]',  // Tracklist will be fetched on-demand
+            syncTime,
             (err) => {
-              if (!err) insertCount++;
+              if (err) console.error(`Error saving release ${release.id}:`, err);
+              else insertCount++;
             }
           );
         });
 
-        stmt.finalize(() => {
+        stmt.finalize();
+        db.run('DELETE FROM collection WHERE last_synced != ?', [syncTime]);
+        db.run('COMMIT', (err) => {
+          if (err) {
+            db.run('ROLLBACK');
+            return res.status(500).json({ error: err.message });
+          }
           console.log(`Synced ${insertCount} releases`);
-          res.json({ 
-            success: true, 
+          res.json({
+            success: true,
             synced: insertCount,
             total: data.pagination.items
           });
@@ -408,7 +431,7 @@ ${collectionText}`;
 
       try {
         const message = await openai.chat.completions.create({
-          model: 'gpt-3.5-turbo',
+          model: process.env.OPENAI_MODEL || 'gpt-5.4-mini',
           temperature: 0.7,
           messages: [
             {
@@ -434,12 +457,11 @@ ${collectionText}`;
         const recommendations = JSON.parse(jsonMatch[0]);
         
         // Enhance recommendations with full album data from collection
+        // No artist-only fallback: that would show a different album alongside the AI's reason
         const enhancedRecommendations = recommendations.map(rec => {
-          const album = rows.find(r => 
-            r.artist.toLowerCase().includes(rec.artist.toLowerCase()) && 
+          const album = rec.artist && rec.title && rows.find(r =>
+            r.artist.toLowerCase().includes(rec.artist.toLowerCase()) &&
             r.title.toLowerCase().includes(rec.title.toLowerCase())
-          ) || rows.find(r => 
-            r.artist.toLowerCase() === rec.artist.toLowerCase()
           );
           
           return {

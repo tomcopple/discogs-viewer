@@ -363,6 +363,16 @@
     document.getElementById('randomBtn').addEventListener('click', showRandomUnrated);
     document.getElementById('aiBtn').addEventListener('click', openAiModal);
 
+    // Escape text before putting it into HTML (e.g. Bonnie "Prince" Billy)
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
     // Check Last.fm connection status on load
     checkLastfmStatus();
     // Load collection on startup
@@ -481,12 +491,12 @@
       const grid = document.getElementById('grid');
       grid.innerHTML = albums.map(album => `
         <div class="album" onclick="showDetails(${album.id})">
-          <img src="${album.thumb || album.cover_image}" 
-               alt="${album.title}"
+          <img src="${escapeHtml(album.thumb || album.cover_image)}"
+               alt="${escapeHtml(album.title)}"
                onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22%3E%3Crect fill=%22%23334155%22 width=%22200%22 height=%22200%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 fill=%22%2394a3b8%22 text-anchor=%22middle%22 dy=%22.3em%22%3ENo Image%3C/text%3E%3C/svg%3E'">
           <div class="album-info">
-            <div class="album-title">${album.title}</div>
-            <div class="album-artist">${album.artist}</div>
+            <div class="album-title">${escapeHtml(album.title)}</div>
+            <div class="album-artist">${escapeHtml(album.artist)}</div>
           </div>
         </div>
       `).join('');
@@ -538,26 +548,26 @@
             <div class="album-detail">
               <div>
                 <img class="album-cover-large" 
-                     src="${album.cover_image || album.thumb}" 
-                     alt="${album.title}"
+                     src="${escapeHtml(album.cover_image || album.thumb)}"
+                     alt="${escapeHtml(album.title)}"
                      onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22300%22 height=%22300%22%3E%3Crect fill=%22%23334155%22 width=%22300%22 height=%22300%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 fill=%22%2394a3b8%22 text-anchor=%22middle%22 dy=%22.3em%22%3ENo Image%3C/text%3E%3C/svg%3E'">
               </div>
               <div class="album-info-detail">
-                <h2>${album.title}</h2>
-                <div class="artist">${album.artist}</div>
+                <h2>${escapeHtml(album.title)}</h2>
+                <div class="artist">${escapeHtml(album.artist)}</div>
                 
                 <div class="album-meta">
                   <div class="meta-item">
                     <span class="meta-label">Year:</span>
-                    <span>${album.year || 'Unknown'}</span>
+                    <span>${escapeHtml(album.year || 'Unknown')}</span>
                   </div>
                   <div class="meta-item">
                     <span class="meta-label">Format:</span>
-                    <span>${album.format || 'Unknown'}</span>
+                    <span>${escapeHtml(album.format || 'Unknown')}</span>
                   </div>
                   <div class="meta-item">
                     <span class="meta-label">Label:</span>
-                    <span>${album.label || 'Unknown'}</span>
+                    <span>${escapeHtml(album.label || 'Unknown')}</span>
                   </div>
                   <div class="meta-item">
                     <span class="meta-label">My Rating:</span>
@@ -581,14 +591,14 @@
                     <h3>Tracklist</h3>
                     ${tracklist.map(track => `
                       <div class="track">
-                        <span class="track-position">${track.position || ''}</span>
-                        <span class="track-title">${track.title || ''}</span>
-                        ${track.duration ? `<span class="track-duration" style="margin-left: auto; color: #64748b;">${track.duration}</span>` : ''}
+                        <span class="track-position">${escapeHtml(track.position)}</span>
+                        <span class="track-title">${escapeHtml(track.title)}</span>
+                        ${track.duration ? `<span class="track-duration" style="margin-left: auto; color: #64748b;">${escapeHtml(track.duration)}</span>` : ''}
                       </div>
                     `).join('')}
                   </div>
                   ${lastfmConnected ? `
-                    <button class="scrobble-btn" data-album-id="${album.id}" data-artist="${album.artist}" data-title="${album.title}">
+                    <button class="scrobble-btn" data-album-id="${album.id}" data-artist="${escapeHtml(album.artist)}" data-title="${escapeHtml(album.title)}">
                       🎵 Scrobble to Last.fm
                     </button>
                   ` : ''}
@@ -598,7 +608,7 @@
           `;
         })
         .catch(error => {
-          modalBody.innerHTML = `<div class="loading">Error loading album: ${error.message}</div>`;
+          modalBody.innerHTML = `<div class="loading">Error loading album: ${escapeHtml(error.message)}</div>`;
         });
     }
 
@@ -678,7 +688,7 @@
       section.innerHTML = `
         <div style="background: #7c2d12; border: 1px solid #ea580c; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
           <p style="margin: 0; color: #fed7aa;"><strong>⚠️ Error:</strong></p>
-          <p style="margin: 10px 0 0 0; color: #fecaca;">${errorMessage}</p>
+          <p style="margin: 10px 0 0 0; color: #fecaca;">${escapeHtml(errorMessage)}</p>
         </div>
         <div style="display: flex; gap: 10px;">
           <button onclick="closeAiModal()" style="flex: 1; background: #64748b; padding: 12px;">Close</button>
@@ -700,19 +710,19 @@
               <div class="ai-recommendation-header">
                 ${rec.thumb ? `
                   <div class="ai-recommendation-cover">
-                    <img src="${rec.thumb}" alt="${rec.title}" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22%3E%3Crect fill=%22%23334155%22 width=%22100%22 height=%22100%22/%3E%3C/svg%3E'">
+                    <img src="${escapeHtml(rec.thumb)}" alt="${escapeHtml(rec.title)}" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22%3E%3Crect fill=%22%23334155%22 width=%22100%22 height=%22100%22/%3E%3C/svg%3E'">
                   </div>
                 ` : `
                   <div class="ai-recommendation-cover" style="background: #334155;"></div>
                 `}
                 <div class="ai-recommendation-title">
-                  <h3>${rec.artist} - ${rec.title}</h3>
-                  <div class="artist">${rec.year ? rec.year : ''}</div>
+                  <h3>${escapeHtml(rec.artist)} - ${escapeHtml(rec.title)}</h3>
+                  <div class="artist">${escapeHtml(rec.year)}</div>
                   ${rec.rating ? `<div class="meta">Rating: ${'★'.repeat(rec.rating)}${'☆'.repeat(5-rec.rating)}</div>` : ''}
-                  ${rec.format ? `<div class="meta">Format: ${rec.format}</div>` : ''}
+                  ${rec.format ? `<div class="meta">Format: ${escapeHtml(rec.format)}</div>` : ''}
                 </div>
               </div>
-              <div class="ai-recommendation-reason">"${rec.reason}"</div>
+              <div class="ai-recommendation-reason">"${escapeHtml(rec.reason)}"</div>
             </div>
           `).join('')}
         </div>
